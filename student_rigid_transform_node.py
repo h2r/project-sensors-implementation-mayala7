@@ -63,19 +63,23 @@ class RigidTransformNode(object):
         # TODO: create a ROS publisher for the estimated positions
             # message type: PoseStamped
             # topic: /pidrone/picamera/pose
+        self._posepub = rospy.Publisher('/pidrone/picamera/pose', PoseStamped, queue_size=1)
 
         # Subscribers:
         # TODO: subscribe to /pidrone/reset_transform
             # message type: Empty
             # callback method: reset_callback
+        self._rtsub = rospy.Subscriber('/pidrone/reset_transform', Empty, self.reset_callback, queue_size=1)
 
         # TODO: subscribe to /pidrone/position_control
             # message type: Bool
             # callback method: position_control_callback
+        self._pcsub = rospy.Subscriber('/pidrone/position_control', Bool, self.position_control_callback, queue_size=1)
 
         # TODO: subscribe to /pidrone/state
             # message type: State
             # callback method: state_callback
+        self._stsub = rospy.Subscriber('/pidrone/state', State, self.state_callback, queue_size=1)
             
         
         # Subscribers
@@ -158,7 +162,7 @@ class RigidTransformNode(object):
                     translation_first, yaw_first = self.translation_and_yaw(transform_first)
                     # use an EMA filter to smooth the position and yaw values
                     self.pose_msg.pose.position.x = translation_first[0]
-                    self.pose_msg.pose.position.y = translation_first[1].altitude
+                    self.pose_msg.pose.position.y = translation_first[1]
                     # With just a yaw, the x and y components of the
                     # quaternion are 0
                     _,_,z,w = tf.transformations.quaternion_from_euler(0,0,yaw_first)
@@ -190,8 +194,8 @@ class RigidTransformNode(object):
                         # HINT: use self.x_position_from_state and self.y_position_from_state as the
                         # previous position
 
-                        self.pose_msg.pose.position.x = self.x_position_from_state + ???
-                        self.pose_msg.pose.position.y = self.y_position_from_state + ???
+                        self.pose_msg.pose.position.x = self.x_position_from_state + (int_displacement[0]*self.altitude)
+                        self.pose_msg.pose.position.y = self.y_position_from_state + (int_displacement[0]*self.altitude)
                         
                         
                         
@@ -238,14 +242,13 @@ class RigidTransformNode(object):
         # TODO: extract the translation information from the transform variable. Divide the 
         # the x displacement by 320, which is the width of the camera resolution. Divide the
         # y displacement by 240, the height of the camera resolution.
-        pixel_translation_x_y = ??? 
-        
-        real_translation_x_y = [0.0, 0.0]
-        real_translation_x_y[0] = (pixel_translation_x_y[0] / 320.0) * self.altitude
-        real_translation_x_y[1] = (pixel_translation_x_y[1] / 240.0) * self.altitude
+        real_translation_x_y = [0 - float(transform[0, 2]) / 320,
+                            float(transform[1, 2]) / 240]
 
         # TODO: use np.arctan2 and the transform variable to calculate the yaw
-        yaw = ???
+        yaw_scale = np.sqrt(transform[0, 0]**2 + transform[1, 0]**2)
+        yaw_y_x = [float(transform[1, 0]) / yaw_scale, float(transform[0, 0]) / yaw_scale]
+        yaw = np.arctan2(yaw_y_x[0], yaw_y_x[1])
         
         return real_translation_x_y, yaw
 
@@ -256,12 +259,20 @@ class RigidTransformNode(object):
     def reset_callback(self, msg):
         """ Reset the current position and orientation """
         print("Resetting Phase")
+        self.first = True
+        self.first_image_counter = 0
+        self.max_first_counter = 0
+        self.last_first_time = None
+        self.pose_msg = PoseStamped()
+        self._lostpub.publish(False)
+
 
 
     # TODO: Implement
     def position_control_callback(self, msg):
         ''' Set whether the pose is calculated and published '''
-        pass
+        self.position_control = msg.data
+        print((self.position_control))
 
     def state_callback(self, msg):
         """
